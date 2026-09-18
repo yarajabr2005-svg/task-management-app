@@ -216,6 +216,21 @@ A future task model will likely need fields similar to:
 
 Reminder fields should be added when the reminder feature is implemented rather than prematurely adding unused fields.
 
+### Current task model baseline
+
+The current task model implements the baseline fields above and uses `isDeleted: false` for soft deletion. This is appropriate for the first task-CRUD milestone. The implementation must also enforce these application invariants:
+
+- Every task query is scoped by the authenticated `userId`, except explicitly authorized admin operations.
+- A completed task has `status: "completed"` and a `completedAt` timestamp.
+- A pending task has `status: "pending"` and `completedAt: null`.
+- Marking a task complete sets `completedAt`; restoring a task to pending clears it.
+- Soft-deleted tasks are excluded from normal reads and are not returned in counts or search results.
+- Updating or deleting a task must verify ownership before changing it.
+
+The current single-field `userId` index supports basic ownership lookups. Before task filtering and sorting are implemented, add and verify compound indexes based on measured query patterns, initially considering `{ userId: 1, status: 1, deadline: 1 }` and an index that supports upcoming-task queries. Indexes should be confirmed with query explain plans rather than added indiscriminately.
+
+The task model should not silently decide API behavior. The task API contract must define title and description limits, whether past deadlines are allowed, how `null` deadlines are represented, allowed status transitions, pagination, and the exact date/timezone semantics for deadline searches.
+
 ## 8. Email Reminders and Background Work
 
 The application may later send:
