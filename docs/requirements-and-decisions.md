@@ -258,20 +258,67 @@ Before considering the authentication system complete, add or plan for:
 
 ## 10. Decisions Before API Contracts
 
-Before defining routes and request/response schemas, decide and document:
+The following decisions are final for the first release.
 
-1. Whether the public field is called `username`, `name`, or both.
-2. Whether usernames are unique and what characters are allowed.
-3. Whether account deletion is soft deletion, permanent deletion, or a staged process.
-4. Access-token lifetime and refresh-token lifetime.
-5. Whether logout revokes one session or all sessions for the user.
-6. Refresh-token rotation and reuse-detection behavior.
-7. Verification-token and reset-token lifetimes.
-8. Cookie-based or header-based client authentication details.
-9. User timezone behavior for date searches and future reminders.
-10. Task status values and deadline-search semantics.
-11. Initial admin bootstrap procedure.
-12. Which administrative operations are required for the first release.
+### Identity and usernames
+
+- The public identity field is `username`. A separate `name` field will only be added if the product later needs a person's real or display name.
+- Usernames are unique, stored in lowercase, and limited to 3-30 characters.
+- The allowed characters are lowercase letters, digits, underscores, and periods: `^[a-z0-9_.]{3,30}$`.
+- Username uniqueness is enforced by a database unique index. Application validation should provide a friendly error, but cannot replace the database constraint.
+
+### Account deletion
+
+- Normal user deletion is a soft delete using `isDeleted: true`.
+- Deleted users cannot log in or use normal application features.
+- Soft deletion preserves task ownership and supports restoration during the retention period.
+- Permanent deletion is a controlled administrative or operational process, not a public user action. It must follow a documented retention and privacy policy, and should anonymize or remove personal data when required.
+
+### Token lifetimes and authentication transport
+
+- Access JWT lifetime: 15 minutes.
+- Refresh-token lifetime: 7 days, extendable later based on product needs.
+- Access tokens are sent in the `Authorization: Bearer <access_token>` header.
+- Refresh tokens are sent in a secure, `HttpOnly`, `SameSite` cookie. Production cookies must also use `Secure`.
+- Because refresh cookies are automatically sent by browsers, refresh endpoints must use an appropriate CSRF defense, such as strict same-site policy plus origin checks or a CSRF token strategy.
+
+### Session lifecycle
+
+- Normal logout revokes only the current refresh-token session.
+- A separate logout-all-sessions capability should revoke every session belonging to the user.
+- Password change, password reset, and account deletion revoke all refresh-token sessions.
+- Refresh tokens rotate on every successful refresh. The previous token becomes invalid immediately.
+- Reuse of a revoked or already-rotated refresh token is treated as token theft: revoke all sessions for the affected user and record a security audit event.
+
+### Verification and password reset
+
+- Email verification tokens expire after 30 minutes.
+- Password-reset tokens expire after 15 minutes.
+- Both token types are cryptographically random, stored only as hashes, single-use, and invalidated after successful use.
+
+### Time and task behavior
+
+- All timestamps are stored in UTC.
+- Each user has an IANA timezone such as `Europe/Amsterdam`; it is used to interpret date-only searches and future reminders.
+- Task statuses are `pending` and `completed`.
+- Overdue is computed from `deadline` and the current time; it is not stored as a status.
+- Soft-deleted tasks are represented by a separate deletion flag or deletion timestamp, not by a `deleted` task status.
+- Deadline sorting is ascending, with tasks without deadlines listed last.
+- A deadline-date search matches tasks whose deadline falls on that calendar date in the user's timezone. Searching by task creation date is a separate filter and is not part of the deadline search unless explicitly requested.
+
+### Admin bootstrap and first-release capabilities
+
+- The first admin is created manually or through a controlled seed/bootstrap script.
+- Public registration never accepts or assigns the `admin` role.
+- Later role changes require a protected admin-only operation and an audit event.
+- The minimum first-release admin capabilities are:
+  - View and search users.
+  - View a user's tasks when support or moderation requires it.
+  - Soft-delete a user.
+  - Restore a user during the retention period.
+  - Delete or soft-delete a task when moderation requires it.
+  - View security and administrative audit logs.
+- “System logs” means filtered audit logs for security-sensitive and administrative actions; it does not mean exposing arbitrary server logs through the API.
 
 After these decisions, define the API contracts for authentication and users first. Then create the task model and task contracts.
 
@@ -291,3 +338,7 @@ After these decisions, define the API contracts for authentication and users fir
 12. Implement task CRUD, filtering, sorting, and pagination.
 13. Add tests, rate limiting, documentation, and logging.
 14. Add Redis, background jobs, email reminders, and optional WebSockets as later refinements.
+
+## 12. Decision Maintenance
+
+Whenever a product or architecture decision changes, update this document in the same work session before implementing the affected API or model. The decision should be recorded in the relevant section, and any outdated recommendation should be removed or clearly marked as superseded.
