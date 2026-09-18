@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import colors from 'colors';
 
 const connectDB = async () => {
   try {
@@ -6,7 +7,7 @@ const connectDB = async () => {
       dbName: process.env.DB_NAME,
     });
 
-    console.log(`MongoDB connected: ${connection.connection.host}`);
+    console.log(colors.bgBrightBlue.black(`MongoDB connected: ${connection.connection.host}`));
   } catch (error) {
     console.error('MongoDB connection error:', error.message);
     process.exit(1); // stop server if DB fails

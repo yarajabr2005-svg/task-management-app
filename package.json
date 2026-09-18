@@ -20,6 +20,7 @@
   },
   "homepage": "https://github.com/yarajabr2005-svg/task-management-app#readme",
   "dependencies": {
+    "colors": "^1.4.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
