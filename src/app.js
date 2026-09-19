@@ -1,6 +1,10 @@
 import cors from 'cors';
 import express from 'express';
 import morgan from 'morgan';
+import {
+  errorMiddleware,
+  notFoundMiddleware,
+} from './middlewares/error.middleware.js';
 
 const app = express();
 
@@ -13,15 +17,7 @@ app.get('/health', (_request, response) => {
   response.status(200).json({ status: 'ok' });
 });
 
-app.use((_request, response) => {
-  response.status(404).json({ message: 'Route not found' });
-});
-
-app.use((error, _request, response, _next) => {
-  console.error(error);
-  response.status(error.statusCode || 500).json({
-    message: error.message || 'Internal server error',
-  });
-});
+app.use(notFoundMiddleware);
+app.use(errorMiddleware);
 
 export default app;
