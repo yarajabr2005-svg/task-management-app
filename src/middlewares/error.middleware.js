@@ -1,4 +1,4 @@
-import { AppError } from '../utils/errors.js';
+import { AppError, ValidationError } from '../utils/errors.js';
 
 export function notFoundMiddleware(request, _response, next) {
   const error = new AppError({
@@ -16,18 +16,21 @@ export function errorMiddleware(error, _request, response, next) {
     return;
   }
 
-  const isExpectedError = error instanceof AppError;
-  const statusCode = isExpectedError ? error.statusCode : 500;
-  const code = isExpectedError ? error.code : 'INTERNAL_SERVER_ERROR';
+  const normalizedError = error.type === 'entity.parse.failed'
+    ? new ValidationError('Request body contains malformed JSON.')
+    : error;
+  const isExpectedError = normalizedError instanceof AppError;
+  const statusCode = isExpectedError ? normalizedError.statusCode : 500;
+  const code = isExpectedError ? normalizedError.code : 'INTERNAL_SERVER_ERROR';
   const message = isExpectedError
-    ? error.message
+    ? normalizedError.message
     : 'An unexpected error occurred.';
-  const details = isExpectedError && error.details !== undefined
-    ? error.details
+  const details = isExpectedError && normalizedError.details !== undefined
+    ? normalizedError.details
     : {};
 
   if (!isExpectedError) {
-    console.error(error);
+    console.error(normalizedError);
   }
 
   response.status(statusCode).json({
