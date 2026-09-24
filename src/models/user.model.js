@@ -6,6 +6,8 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+      lowercase: true,
+      unique: true,
     },
 
     email: {
@@ -16,10 +18,10 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
-    password: {
+    passwordHash: {
       type: String,
       required: true,
-      minlength: 6,
+      minlength: 8,
       select: false,
     },
 
@@ -47,13 +49,34 @@ const userSchema = new mongoose.Schema(
       maxlength: 300, // prevents abuse + keeps UI clean
       default: "",
     },
+
+    timezone: {
+      type: String,
+      required: true,
+      default: "UTC",
+    },
+
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    emailVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+
+    passwordChangedAt: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );
 
 userSchema.methods.toJSON = function () {
   const obj = this.toObject();
-  delete obj.password;
+  delete obj.passwordHash;
   delete obj.__v;
   return obj;
 };
