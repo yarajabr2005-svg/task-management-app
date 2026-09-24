@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import RefreshSession from '../models/RefreshSession.js';
+import RefreshSession from '../models/refresh-session.model.js';
 import {
   AuthenticationError,
   ConflictError,
