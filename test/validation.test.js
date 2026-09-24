@@ -14,6 +14,8 @@ const validObjectId = '64f1c9b8f1a2c00123456789';
 test('validates MongoDB ObjectIds', () => {
   assert.equal(isObjectId(validObjectId), true);
   assert.equal(isObjectId('not-an-object-id'), false);
+  assert.equal(isObjectId(`${validObjectId}\n`), false);
+  assert.equal(objectIdSchema.safeParse(`${validObjectId}\n`).success, false);
   assert.equal(objectIdSchema.safeParse(validObjectId).success, true);
 });
 

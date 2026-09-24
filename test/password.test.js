@@ -17,6 +17,21 @@ test('hashes and compares passwords without returning plaintext', async () => {
   assert.equal(await comparePassword('WrongPassword123!', passwordHash), false);
 });
 
+test('rejects malformed bcrypt hash metadata', async () => {
+  const passwordHash = await hashPassword('PlainTextPassword123!');
+
+  for (const malformedHash of [
+    passwordHash.replace('$10$', '$03$'),
+    passwordHash.replace('$10$', '$32$'),
+    `${passwordHash}\n`,
+  ]) {
+    await assert.rejects(
+      () => comparePassword('PlainTextPassword123!', malformedHash),
+      (error) => error.code === 'INVALID_CREDENTIALS' && error.statusCode === 401,
+    );
+  }
+});
+
 test('uses a unique salt for each password hash', async () => {
   const firstHash = await hashPassword('PlainTextPassword123!');
   const secondHash = await hashPassword('PlainTextPassword123!');

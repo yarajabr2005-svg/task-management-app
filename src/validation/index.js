@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const objectIdPattern = /^[0-9a-fA-F]{24}$/;
+const objectIdPattern = /^[0-9a-fA-F]{24}(?![\s\S])/;
 
 export const requestTargets = Object.freeze([
   'body',
