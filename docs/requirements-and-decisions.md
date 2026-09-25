@@ -4,20 +4,22 @@ This document records the product requirements and architectural decisions agree
 
 It is intentionally a planning document. It does not require task models, task routes, Redis, background workers, or email infrastructure to be implemented immediately.
 
+**Implementation status (2026-09-25):** Foundational authentication services, token/session models, validation utilities, middleware, and the baseline task model have been implemented. Authentication and user HTTP controllers/routes, task operations, audit logging, rate limiting, and deployment infrastructure remain incomplete.
+
 ## 1. Product Scope
 
 The application is a task management API built with Node.js, Express, MongoDB, and Mongoose.
 
 The implementation will be developed in stages:
 
-1. Authentication and account management
-2. API contracts and validation
-3. Task model and task operations
-4. Documentation, logging, rate limiting, and testing
-5. Redis, background jobs, reminders, and other refinements
-6. Deployment and operational improvements
+1. Authentication and account management [PARTIAL: core services/utilities exist; HTTP controllers/routes are pending.]
+2. API contracts and validation [PARTIAL: contracts and shared validation exist; route-specific validation is pending.]
+3. Task model and task operations [PARTIAL: baseline task model exists; task operations are pending.]
+4. Documentation, logging, rate limiting, and testing [PARTIAL: planning/contracts and unit tests exist; audit logging and rate limiting are pending.]
+5. Redis, background jobs, reminders, and other refinements [NOT IMPLEMENTED; intentionally deferred.]
+6. Deployment and operational improvements [NOT IMPLEMENTED; intentionally deferred.]
 
-The first milestone covers users and authentication only. Task operations will be added after the user and authentication contracts are agreed upon.
+The first milestone covers users and authentication only. Task operations will be added after the user and authentication contracts are agreed upon. [CHANGED: authentication service work is underway, but its HTTP layer and the user profile/admin layer are not yet implemented.]
 
 ## 2. User Account Requirements
 
@@ -35,7 +37,9 @@ A regular user must be able to:
 - Reset their password through a time-limited email link.
 - Delete their account.
 
-Email verification is required before login is allowed.
+**User-account implementation status:** Registration, login, email verification, logout/session revocation, password change, password-reset request, and password reset exist as service-layer functions in `src/services/auth.service.js`; their controllers/routes are not implemented. Profile updates and account deletion are not implemented. The email provider is only an injectable adapter, not a production delivery integration.
+
+Email verification is required before login is allowed. [DONE in the auth service; the HTTP route is pending.]
 
 Email format validation and email ownership verification are separate concerns:
 
@@ -44,7 +48,9 @@ Email format validation and email ownership verification are separate concerns:
 
 The email address should be normalized consistently, including trimming and lowercasing. Email uniqueness must be enforced by a MongoDB unique index, and duplicate-key errors must still be handled by the API.
 
-If usernames are publicly visible or used for lookup, usernames should also be unique and normalized according to a documented policy.
+If usernames are publicly visible or used for lookup, usernames should also be unique and normalized according to a documented policy. [PARTIAL/DONE: the model has a unique index and registration lowercases usernames; route-level policy validation is pending.]
+
+**Identity implementation status:** Email and username fields are trimmed/lowercased by the model and auth service, unique indexes exist, and duplicate email/username errors are translated in registration. Email-format, username-pattern, and other request validation schemas are not yet attached to auth routes because those routes do not exist.
 
 ## 3. Authentication Decisions
 
@@ -63,6 +69,8 @@ Argon2id is the preferred modern choice for a new high-security system, but swit
 
 ### Access and refresh tokens
 
+**Implementation status:** JWT access/refresh creation and verification are implemented in `src/utils/jwt.js`, including separate secrets, issuer/audience checks, lifetimes from environment variables, and restricted claims. Auth routes/controllers that use these utilities are still pending.
+
 Use JWT access tokens and refresh tokens with different responsibilities:
 
 - Access tokens are short-lived and authorize API requests.
@@ -70,6 +78,8 @@ Use JWT access tokens and refresh tokens with different responsibilities:
 - Access tokens should not be used as the revocable session record.
 
 For a browser client, store the refresh token in a secure, `HttpOnly`, `SameSite` cookie. Avoid exposing refresh tokens to browser JavaScript when possible.
+
+[PARTIAL: `src/utils/refresh-cookie.js` defines the HttpOnly/SameSite/production-Secure cookie behavior, but login/refresh/logout route integration and CSRF/origin protection are not implemented.]
 
 ### Refresh-token storage
 
@@ -87,6 +97,8 @@ A future session record can contain:
 
 Use refresh-token rotation. When a refresh token is used, invalidate it and issue a replacement. Reuse of an already-invalidated token should revoke the related session or all sessions for that user, depending on the security policy.
 
+[DONE at the service layer: `src/models/refresh-session.model.js` stores only the token hash and `src/services/refresh-session.service.js` performs rotation, replacement linking, expiry checks, and reuse detection. Audit persistence and HTTP routes remain pending.]
+
 Redis is not required before the core authentication flow works. It can be added later for fast session lookup, TTL cleanup, distributed deployments, rate limiting, caching, and job queues. MongoDB-backed sessions are a reasonable first implementation and are easier to inspect while learning.
 
 ### Session invalidation
@@ -100,6 +112,8 @@ Refresh sessions must be invalidated when:
 - A refresh-token reuse or other suspicious security event is detected.
 
 Because access JWTs are stateless, they should be short-lived. Revoking the refresh session prevents new access tokens from being issued; an already-issued access token remains valid until it expires unless a separate denylist or token-version strategy is introduced.
+
+**Session invalidation status:** Logout, logout-all, password change, and password reset service functions revoke refresh sessions. Account-deletion invalidation is not implemented. Reuse detection revokes sessions, but no audit-log persistence exists yet.
 
 ## 4. Email Verification and Password Reset
 
@@ -121,6 +135,8 @@ The user cannot log in until verification succeeds.
 
 ### Forgot-password flow
 
+**Implementation status:** Password reset requests, hashed single-use tokens, reset consumption, password hashing, and refresh-session invalidation are implemented in the auth/email-token services. HTTP routes/controllers, rate limiting, and production email delivery are pending.
+
 A logged-out user can request a password reset email. The response should not reveal whether the email exists.
 
 Password reset tokens must be:
@@ -133,9 +149,11 @@ Password reset tokens must be:
 
 A successful password reset must invalidate all active refresh sessions. Password-reset tokens should normally be kept in a separate collection or token model rather than embedded as plaintext fields on the user document.
 
+[DONE: reset tokens use the separate `EmailToken` model and successful resets call refresh-session revocation.]
+
 ## 5. Current User Model Direction
 
-The user model currently includes the basic identity, role, profile, soft-delete, and timestamp fields. The current password field is hidden from normal Mongoose queries.
+The user model currently includes the basic identity, role, profile, soft-delete, and timestamp fields. The current password field is hidden from normal Mongoose queries. [CHANGED: the implemented field is `passwordHash`, not `password`, and it is excluded with `select: false`.]
 
 When authentication is implemented, the model should evolve toward:
 
@@ -151,7 +169,9 @@ When authentication is implemented, the model should evolve toward:
 - `passwordChangedAt`, if used by the token strategy
 - `createdAt` and `updatedAt`
 
-Do not add authentication fields that no implemented flow can maintain. Fields such as `lastLoginAt`, failed-login counters, account lock timestamps, and email-verification timestamps should be added when their corresponding features are implemented.
+Do not add authentication fields that no implemented flow can maintain. Fields such as `lastLoginAt`, failed-login counters, account lock timestamps, and email-verification timestamps should be added when their corresponding features are implemented. [CHANGED: `emailVerifiedAt` and `passwordChangedAt` are implemented and maintained; `lastLoginAt`, failed-login counters, and account-lock fields remain absent.]
+
+**User-model status:** `username`, normalized unique `email`, `passwordHash`, restricted `role`, `isDeleted`, `isDisabled`, `avatar`, `bio`, `timezone`, email-verification fields, password-change timestamp, and Mongoose timestamps are implemented in `src/models/user.model.js`. Profile/account-lifecycle services and routes are still pending.
 
 ## 6. Roles and Authorization
 
@@ -160,7 +180,7 @@ There are two roles:
 - `user`: owns and manages their own account and tasks.
 - `admin`: performs controlled administrative operations.
 
-Authentication middleware verifies the access token and attaches the authenticated user to the request. Authorization middleware checks whether the user has the required role.
+Authentication middleware verifies the access token and attaches the authenticated user to the request. Authorization middleware checks whether the user has the required role. [PARTIAL: both middleware implementations and unit tests exist, but `requireAuth` currently does not call Express `next()`, so route integration is not complete.]
 
 Role checks alone are not sufficient. Controllers or services must also enforce resource ownership, especially for tasks. A regular user must never be able to read or modify another user's tasks by changing an ID in the request.
 
@@ -168,7 +188,7 @@ Role checks alone are not sufficient. Controllers or services must also enforce 
 
 Public registration must never allow a caller to choose the `admin` role.
 
-The initial admin should be created through a controlled seed or bootstrap process. Later role changes should be performed through a protected admin-only operation and should be recorded in an audit log.
+The initial admin should be created through a controlled seed or bootstrap process. Later role changes should be performed through a protected admin-only operation and should be recorded in an audit log. [NOT IMPLEMENTED: no seed/bootstrap, admin operation layer, or audit-log model exists.]
 
 Administrators may initially be able to:
 
@@ -179,7 +199,7 @@ Administrators may initially be able to:
 - View or moderate tasks when support or moderation requires it.
 - Review security and administrative audit logs.
 
-Administrators must not be able to view plaintext passwords or password hashes through normal application responses. Administrative access should be limited to the capabilities the application genuinely needs.
+Administrators must not be able to view plaintext passwords or password hashes through normal application responses. Administrative access should be limited to the capabilities the application genuinely needs. [DONE for the current model serialization and auth public-user mapping; the admin HTTP layer is pending.]
 
 ## 7. Task Requirements
 
@@ -218,7 +238,7 @@ Reminder fields should be added when the reminder feature is implemented rather 
 
 ### Current task model baseline
 
-The current task model implements the baseline fields above and uses `isDeleted: false` for soft deletion. This is appropriate for the first task-CRUD milestone. The implementation must also enforce these application invariants:
+The current task model implements the baseline fields above and uses `isDeleted: false` for soft deletion. This is appropriate for the first task-CRUD milestone. [DONE at the model baseline; task services/controllers/routes are not implemented.] The implementation must also enforce these application invariants:
 
 - Every task query is scoped by the authenticated `userId`, except explicitly authorized admin operations.
 - A completed task has `status: "completed"` and a `completedAt` timestamp.
@@ -227,7 +247,7 @@ The current task model implements the baseline fields above and uses `isDeleted:
 - Soft-deleted tasks are excluded from normal reads and are not returned in counts or search results.
 - Updating or deleting a task must verify ownership before changing it.
 
-The current single-field `userId` index supports basic ownership lookups. Before task filtering and sorting are implemented, add and verify compound indexes based on measured query patterns, initially considering `{ userId: 1, status: 1, deadline: 1 }` and an index that supports upcoming-task queries. Indexes should be confirmed with query explain plans rather than added indiscriminately.
+The current single-field `userId` index supports basic ownership lookups. [DONE: the current model defines this index.] Before task filtering and sorting are implemented, add and verify compound indexes based on measured query patterns, initially considering `{ userId: 1, status: 1, deadline: 1 }` and an index that supports upcoming-task queries. Indexes should be confirmed with query explain plans rather than added indiscriminately. [PENDING: compound indexes and explain-plan verification.]
 
 The task model should not silently decide API behavior. The task API contract must define title and description limits, whether past deadlines are allowed, how `null` deadlines are represented, allowed status transitions, pagination, and the exact date/timezone semantics for deadline searches.
 
@@ -270,6 +290,8 @@ Before considering the authentication system complete, add or plan for:
 - Pagination for administrative user lists and task lists.
 - A documented soft-delete versus permanent-delete policy.
 - Tests for authentication, authorization, ownership checks, token invalidation, and validation failures.
+
+**Security/operations status:** Generic enumeration-resistant responses exist in the verification/reset services; bcrypt, JWT configuration, duplicate-key translation, cookie helpers, CORS middleware, environment-driven secrets, shared Zod validation, error envelopes, and unit tests are implemented. Rate limiting, CSRF/origin protection, production CORS allowlisting, audit logging, request correlation, auth HTTP tests, ownership tests, and full integration tests are still pending. Administrative pagination is specified in the contract but not implemented because admin routes/services do not exist.
 
 ## 10. Decisions Before API Contracts
 
@@ -323,6 +345,8 @@ The following decisions are final for the first release.
 
 ### Admin bootstrap and first-release capabilities
 
+**Implementation status:** These decisions remain valid, but none of the admin bootstrap, admin user operations, task moderation, or audit-log capabilities are implemented yet.
+
 - The first admin is created manually or through a controlled seed/bootstrap script.
 - Public registration never accepts or assigns the `admin` role.
 - Later role changes require a protected admin-only operation and an audit event.
@@ -335,25 +359,27 @@ The following decisions are final for the first release.
   - View security and administrative audit logs.
 - “System logs” means filtered audit logs for security-sensitive and administrative actions; it does not mean exposing arbitrary server logs through the API.
 
-After these decisions, define the API contracts for authentication and users first. Then create the task model and task contracts.
+After these decisions, define the API contracts for authentication and users first. Then create the task model and task contracts. [DONE: `user.api.contracts.md` and `task.api.contracts.md` exist; implementation is still behind the contracts.]
 
 ## 11. Recommended Implementation Order
 
-1. Confirm the decisions listed above.
-2. Define authentication and user API contracts.
-3. Add request validation and consistent error handling.
-4. Implement registration and bcrypt password hashing.
-5. Implement email verification.
-6. Implement login with access and refresh tokens.
-7. Implement refresh-token storage, rotation, and revocation.
-8. Implement logout, password change, password reset, and account deletion.
-9. Implement authentication and role middleware.
-10. Implement user profile updates.
-11. Define and implement the task model and ownership rules.
-12. Implement task CRUD, filtering, sorting, and pagination.
-13. Add tests, rate limiting, documentation, and logging.
-14. Add Redis, background jobs, email reminders, and optional WebSockets as later refinements.
+1. Confirm the decisions listed above. [DONE: decisions are recorded here.]
+2. Define authentication and user API contracts. [DONE: `user.api.contracts.md` exists.]
+3. Add request validation and consistent error handling. [PARTIAL: shared Zod adapter, validation middleware, malformed-JSON handling, and error envelope exist; route-specific schemas are pending.]
+4. Implement registration and bcrypt password hashing. [PARTIAL: auth service, bcrypt utility, model field, and tests exist; route/controller and database integration tests are pending.]
+5. Implement email verification. [PARTIAL: token model/utilities/service and auth service flow exist; route/controller, production email delivery, and rate limiting are pending.]
+6. Implement login with access and refresh tokens. [PARTIAL: auth service and JWT utilities exist; route/controller, cookie integration, and end-to-end tests are pending.]
+7. Implement refresh-token storage, rotation, and revocation. [DONE at the model/service level; HTTP routes, CSRF/origin checks, audit events, and integration tests are pending.]
+8. Implement logout, password change, password reset, and account deletion. [PARTIAL: logout/password-change/password-reset services exist; account deletion and all HTTP layers are pending.]
+9. Implement authentication and role middleware. [PARTIAL: middleware and unit tests exist; `requireAuth` must be wired to Express with `next()` before routes can use it.]
+10. Implement user profile updates. [NOT IMPLEMENTED.]
+11. Define and implement the task model and ownership rules. [PARTIAL: task model and task contract exist; ownership/service enforcement is pending.]
+12. Implement task CRUD, filtering, sorting, and pagination. [NOT IMPLEMENTED.]
+13. Add tests, rate limiting, documentation, and logging. [PARTIAL: unit tests and API/planning documentation exist; route/integration tests, rate limiting, audit logging, and request logging policy are pending.]
+14. Add Redis, background jobs, email reminders, and optional WebSockets as later refinements. [NOT IMPLEMENTED; intentionally deferred.]
 
 ## 12. Decision Maintenance
 
 Whenever a product or architecture decision changes, update this document in the same work session before implementing the affected API or model. The decision should be recorded in the relevant section, and any outdated recommendation should be removed or clearly marked as superseded.
+
+**Status update:** This document was audited against the current repository on 2026-09-25. The next implementation boundary is the authentication HTTP layer: auth controllers, route-specific Zod schemas, refresh-cookie/CSRF handling, route mounting, and end-to-end auth tests. User profile/admin operations should follow that layer.
