@@ -37,6 +37,11 @@ const userSchema = new mongoose.Schema(
       default: false,
     },
 
+    isDisabled: {
+      type: Boolean,
+      default: false,
+    },
+
     // Profile fields
     avatar: {
       type: String, // URL to image
